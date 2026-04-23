@@ -93,10 +93,10 @@ on(Events.InAppUpdateStateChanged, stateHandler);
 on(Events.InAppUpdateFlowCompleted, completedHandler);
 
 await InAppUpdate.checkForUpdate({
-    preferredType: 'flexible',
-    minStalenessDays: 2,
-    minPriority: 3,
-    id,
+   preferredType: 'flexible',
+   minStalenessDays: 2,
+   minPriority: 3,
+   id,
 });
 
 await InAppUpdate.startFlexibleUpdate({ id });
@@ -118,14 +118,22 @@ off(Events.InAppUpdateFlowCompleted, completedHandler);
 
 ## Recommended usage flow
 
+### Automatic flow (recommended for production)
+
 1. Generate one UUID `id` per update attempt.
-2. Call `checkForUpdate(...)` with your policy (`preferredType`, optional `minStalenessDays`, optional `minPriority`).
-3. Start the selected flow:
-   - `startFlexibleUpdate(...)`, or
-   - `startImmediateUpdate(...)`.
-4. Listen to `InAppUpdateStateChanged` for progress/state transitions and `InAppUpdateFlowCompleted` for terminal states.
-5. If flexible flow reaches `downloaded`, call `completeFlexibleUpdate(...)`.
-6. On app resume / re-entry, call `getInstallStatus()` to refresh UI and continue pending flow.
+2. Call `checkForUpdate(...)` at app start and periodically while the app is active.
+3. If an update is available:
+   - Start `startImmediateUpdate(...)` for required updates, or
+   - Start `startFlexibleUpdate(...)` for optional updates.
+4. Listen to `InAppUpdateStateChanged` and `InAppUpdateFlowCompleted`.
+5. When flexible reaches `downloaded` (or `downloaded_pending_completion`), call `completeFlexibleUpdate(...)` automatically.
+6. On app resume / re-entry, call `getInstallStatus()` and continue any pending flow.
+
+### Manual flow (for testing UI/buttons)
+
+1. `checkForUpdate(...)`
+2. `startFlexibleUpdate(...)` or `startImmediateUpdate(...)`
+3. `completeFlexibleUpdate(...)` only after flexible download is complete
 
 > Note: `id` is a correlation identifier for one update attempt. Reuse the same `id` across all method calls/events for that attempt.
 

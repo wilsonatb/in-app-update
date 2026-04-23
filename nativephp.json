@@ -1,5 +1,18 @@
 {
+    "name": "wilsonatb/in-app-update",
+    "version": "1.0.0",
+    "description": "In-app updates (Android) for NativePHP Mobile",
     "namespace": "InAppUpdate",
+    "category": "utilities",
+    "license": "MIT",
+    "pricing": {
+        "type": "free"
+    },
+    "author": {
+        "name": "Wilson Tovar",
+        "email": "diwdesign.wilson@gmail.com",
+        "url": "https://diwdesign.com"
+    },
     "platforms": [
         "android"
     ],
@@ -31,7 +44,7 @@
         }
     ],
     "android": {
-        "min_version": 21,
+        "min_version": 26,
         "permissions": [],
         "repositories": [],
         "dependencies": {
@@ -46,7 +59,7 @@
         "providers": []
     },
     "ios": {
-        "min_version": "15.0",
+        "min_version": "18.0",
         "dependencies": {
             "swift_packages": [],
             "pods": []

@@ -398,7 +398,6 @@ object InAppUpdateFunctions {
         InstallStatus.INSTALLED -> "installed"
         InstallStatus.FAILED -> "failed"
         InstallStatus.CANCELED -> "canceled"
-        InstallStatus.REQUIRES_UI_INTENT -> "requires_ui_intent"
         InstallStatus.UNKNOWN -> "unknown"
         else -> "unknown"
     }
