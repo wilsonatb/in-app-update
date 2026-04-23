@@ -6,6 +6,12 @@ Android-only NativePHP plugin for Google Play In-App Updates, with both **Flexib
 [![Downloads](https://img.shields.io/packagist/dt/wilsonatb/in-app-update.svg?color=red)](https://packagist.org/packages/wilsonatb/in-app-update)
 ![License](https://img.shields.io/github/license/wilsonatb/in-app-update.svg?color=green)
 
+## Screenshot
+
+<p align="center">
+    <img height="500" alt="InAppUpdate Plugin Screenshot" src="https://github.com/user-attachments/assets/5923e8a9-8a16-464b-80ad-8dd1d9b90fb6" />
+</p>
+
 ## Platform Support
 
 | Platform | Support |
