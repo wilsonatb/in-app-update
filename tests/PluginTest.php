@@ -113,6 +113,29 @@ describe('PHP Classes', function () {
         expect($content)->toContain('namespace Wilsonatb\InAppUpdate');
         expect($content)->toContain('class InAppUpdate');
     });
+
+    it('enforces android-only guard in PHP bridge calls', function () {
+        $file = $this->pluginPath.'/src/InAppUpdate.php';
+        $content = file_get_contents($file);
+
+        expect($content)->toContain('NATIVEPHP_PLATFORM');
+        expect($content)->toContain('InAppUpdate is Android-only.');
+        expect($content)->toContain('unsupported_platform');
+        expect($content)->toContain('supported');
+    });
+});
+
+describe('JavaScript Bridge', function () {
+    it('enforces android-only guard in JavaScript bridge calls', function () {
+        $file = $this->pluginPath.'/resources/js/inAppUpdate.js';
+        expect(file_exists($file))->toBeTrue();
+
+        $content = file_get_contents($file);
+        expect($content)->toContain('detectPlatform');
+        expect($content)->toContain('unsupportedPlatformResponse');
+        expect($content)->toContain('InAppUpdate is Android-only.');
+        expect($content)->toContain('unsupported_platform');
+    });
 });
 
 describe('Composer Configuration', function () {

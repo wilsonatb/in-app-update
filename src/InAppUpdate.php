@@ -71,6 +71,12 @@ final class InAppUpdate
 
     private function call(string $method, array $payload): ?object
     {
+        $unsupportedResponse = $this->unsupportedResponse($method);
+
+        if ($unsupportedResponse !== null) {
+            return $unsupportedResponse;
+        }
+
         if (function_exists('nativephp_call')) {
             $result = nativephp_call($method, json_encode($payload));
 
@@ -82,5 +88,39 @@ final class InAppUpdate
         }
 
         return null;
+    }
+
+    private function unsupportedResponse(string $method): ?object
+    {
+        $platform = $this->detectNativePlatform();
+
+        if ($platform === 'ios') {
+            return (object) [
+                'supported' => false,
+                'status' => 'unsupported_platform',
+                'platform' => $platform,
+                'method' => $method,
+                'message' => sprintf(
+                    'InAppUpdate is Android-only. Method [%s] was skipped on iOS.',
+                    $method
+                ),
+            ];
+        }
+
+        return null;
+    }
+
+    private function detectNativePlatform(): ?string
+    {
+        $rawPlatform = $_SERVER['NATIVEPHP_PLATFORM']
+            ?? $_ENV['NATIVEPHP_PLATFORM']
+            ?? getenv('NATIVEPHP_PLATFORM')
+            ?? null;
+
+        if (! is_string($rawPlatform) || $rawPlatform === '') {
+            return null;
+        }
+
+        return mb_strtolower($rawPlatform);
     }
 }

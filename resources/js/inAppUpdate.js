@@ -20,6 +20,41 @@
 
 const baseUrl = '/_native/api/call';
 
+function detectPlatform() {
+    const explicitPlatform =
+        window?.NATIVEPHP_PLATFORM
+        ?? document?.documentElement?.dataset?.nativephpPlatform
+        ?? null;
+
+    if (typeof explicitPlatform === 'string' && explicitPlatform.length > 0) {
+        return explicitPlatform.toLowerCase();
+    }
+
+    const userAgent = window?.navigator?.userAgent ?? '';
+    const isAppleDevice = /iPhone|iPad|iPod/i.test(userAgent);
+    const hasWebkitBridge = Boolean(window?.webkit?.messageHandlers);
+
+    if (isAppleDevice && hasWebkitBridge) {
+        return 'ios';
+    }
+
+    return null;
+}
+
+function unsupportedPlatformResponse(method) {
+    if (detectPlatform() === 'ios') {
+        return {
+            supported: false,
+            status: 'unsupported_platform',
+            platform: 'ios',
+            method,
+            message: `InAppUpdate is Android-only. Method [${method}] was skipped on iOS.`
+        };
+    }
+
+    return null;
+}
+
 /**
  * Internal bridge call function
  * @private
@@ -54,6 +89,11 @@ async function bridgeCall(method, params = {}) {
  * @returns {Promise<any>}
  */
 async function call(method, params = {}) {
+    const unsupportedResponse = unsupportedPlatformResponse(method);
+    if (unsupportedResponse !== null) {
+        return unsupportedResponse;
+    }
+
     return bridgeCall(method, params);
 }
 

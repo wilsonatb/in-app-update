@@ -19,6 +19,15 @@ Android-only NativePHP plugin for Google Play In-App Updates, with both **Flexib
 | Android | ✅ Supported (Google Play Core) |
 | iOS | ❌ Not supported |
 
+### Runtime behavior on iOS
+
+If any `InAppUpdate` method is called on iOS, the plugin returns a controlled response and skips native execution:
+
+- `supported: false`
+- `status: "unsupported_platform"`
+- `platform: "ios"`
+- `message: "InAppUpdate is Android-only... was skipped on iOS."`
+
 ## Installation
 
 ```bash
@@ -175,6 +184,12 @@ No additional Android permissions are required.
 - Installed build and uploaded build must share the same `applicationId` and signing key.
 - Play will only offer updates for higher `versionCode`.
 - `inAppUpdatePriority` is not available in Internal App Sharing.
+
+## Support
+
+For issues, questions, or feature requests:
+- **Email:** diwdesign.wilson@gmail.com
+- **GitHub Issues:** [Issues](https://github.com/wilsonatb/in-app-update/issues)
 
 ## License
 
