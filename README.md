@@ -44,12 +44,22 @@ use Wilsonatb\InAppUpdate\Events\InAppUpdateFlowCompleted;
 use Wilsonatb\InAppUpdate\Events\InAppUpdateStateChanged;
 use Wilsonatb\InAppUpdate\Facades\InAppUpdate;
 
-$id = (string) str()->uuid();
+public ?string $updateFlowId = null;
 
-InAppUpdate::checkForUpdate(
-    preferredType: 'any', // flexible | immediate | any
-    id: $id,
-);
+public function checkUpdate(): void
+{
+    $this->updateFlowId = (string) str()->uuid();
+
+    $result = InAppUpdate::checkForUpdate(
+        preferredType: 'any', // flexible | immediate | any
+        id: $this->updateFlowId,
+    );
+
+    // iOS-safe response: plugin skips execution and returns supported=false.
+    if (($result->supported ?? true) === false) {
+        return;
+    }
+}
 
 #[OnNative(InAppUpdateStateChanged::class)]
 public function onInAppUpdateStateChanged(
@@ -57,16 +67,17 @@ public function onInAppUpdateStateChanged(
     ?string $updateType = null,
     ?string $id = null,
     ?string $installStatus = null,
+    ?bool $isUpdateAvailable = null,
 ): void {
     if ($id !== $this->updateFlowId) {
         return;
     }
 
-    if ($status === 'availability_checked') {
+    if ($status === 'availability_checked' && $isUpdateAvailable) {
         InAppUpdate::startFlexibleUpdate(id: $id);
     }
 
-    if ($installStatus === 'downloaded') {
+    if (in_array($installStatus, ['downloaded'], true)) {
         InAppUpdate::completeFlexibleUpdate(id: $id);
     }
 }
@@ -95,63 +106,46 @@ const onFlowCompleted = (payload) => console.log('completed', payload);
 on(Events.InAppUpdateStateChanged, onState);
 on(Events.InAppUpdateFlowCompleted, onFlowCompleted);
 
-await InAppUpdate.checkForUpdate({ preferredType: 'any', id });
-await InAppUpdate.startFlexibleUpdate({ id });
-await InAppUpdate.completeFlexibleUpdate({ id });
+const check = await InAppUpdate.checkForUpdate({ preferredType: 'any', id });
+
+// iOS-safe response: no error, just skip.
+if (!check?.supported) {
+    console.log('InAppUpdate not supported on this platform', check);
+} else if (check?.isUpdateAvailable) {
+    await InAppUpdate.startFlexibleUpdate({ id });
+}
 
 const latestStatus = await InAppUpdate.getInstallStatus();
+if (latestStatus?.installStatus === 'downloaded') {
+    await InAppUpdate.completeFlexibleUpdate({ id });
+}
 
 off(Events.InAppUpdateStateChanged, onState);
 off(Events.InAppUpdateFlowCompleted, onFlowCompleted);
 ```
 
-## Recommended Flow
+## Bridge Methods (PHP + JavaScript)
 
-### Automatic flow (recommended for production)
+All methods use the same bridge functions internally:
 
-1. Generate one UUID `id` per update attempt.
-2. Call `checkForUpdate(...)` at app start and periodically while active.
-3. If update is available:
-   - start `startImmediateUpdate(...)` for required updates, or
-   - start `startFlexibleUpdate(...)` for optional updates.
-4. Listen to `InAppUpdateStateChanged` + `InAppUpdateFlowCompleted`.
-5. If flexible reaches `downloaded` / `downloaded_pending_completion`, call `completeFlexibleUpdate(...)`.
-6. On resume/re-entry, call `getInstallStatus()` to continue pending flows.
-
-### Manual flow (testing with buttons/UI)
-
-1. `checkForUpdate(...)`
-2. `startFlexibleUpdate(...)` or `startImmediateUpdate(...)`
-3. `completeFlexibleUpdate(...)` only after flexible download completes
+| Method | Bridge function | What it does | Immediate return | Async events |
+|---|---|---|---|---|
+| `checkForUpdate(...)` | `InAppUpdate.CheckForUpdate` | Checks availability and allowed update types (`flexible`, `immediate`, `any`) with optional staleness/priority filters | `{ status: "checking", preferredType, id }` | `InAppUpdateStateChanged` (`status: "availability_checked"`), or `InAppUpdateFlowCompleted` with `result: "failed"` |
+| `startFlexibleUpdate(...)` | `InAppUpdate.StartFlexibleUpdate` | Starts Play Core flexible flow | `{ status: "starting", updateType: "flexible", allowAssetPackDeletion, id }` | `InAppUpdateStateChanged` (`flow_started`, `install_state_changed`, `downloaded_pending_completion`), `InAppUpdateFlowCompleted` (`downloaded`, `installed`, `canceled`, `failed`) |
+| `startImmediateUpdate(...)` | `InAppUpdate.StartImmediateUpdate` | Starts Play Core immediate flow | `{ status: "starting", updateType: "immediate", allowAssetPackDeletion, id }` | `InAppUpdateStateChanged` (`flow_started`, `install_state_changed`, `developer_triggered_update_in_progress`, `resuming_immediate_update`), `InAppUpdateFlowCompleted` (`installed`, `canceled`, `failed`) |
+| `completeFlexibleUpdate(...)` | `InAppUpdate.CompleteFlexibleUpdate` | Installs already downloaded flexible update | `{ status: "completing", updateType: "flexible", id }` | `InAppUpdateStateChanged` (`completing_flexible_update`), or `InAppUpdateFlowCompleted` with `result: "failed"` |
+| `getInstallStatus()` | `InAppUpdate.GetInstallStatus` | Returns last known native status snapshot | Last cached status object (initially `{ status: "idle" }`) | None |
 
 > Reuse the same `id` across all calls/events in the same update attempt.
 
-## API
-
-### PHP Facade Methods
-
-- `InAppUpdate::checkForUpdate(string $preferredType = 'flexible', ?int $minStalenessDays = null, ?int $minPriority = null, ?string $id = null)`
-- `InAppUpdate::startFlexibleUpdate(bool $allowAssetPackDeletion = false, ?string $id = null)`
-- `InAppUpdate::startImmediateUpdate(bool $allowAssetPackDeletion = false, ?string $id = null)`
-- `InAppUpdate::completeFlexibleUpdate(?string $id = null)`
-- `InAppUpdate::getInstallStatus()`
-
-### JavaScript Methods
-
-- `InAppUpdate.checkForUpdate(options)`
-- `InAppUpdate.startFlexibleUpdate(options)`
-- `InAppUpdate.startImmediateUpdate(options)`
-- `InAppUpdate.completeFlexibleUpdate(options)`
-- `InAppUpdate.getInstallStatus()`
-
 ## Events
 
-| Event | Purpose |
-|---|---|
-| `Wilsonatb\InAppUpdate\Events\InAppUpdateStateChanged` | Availability, progress, and status transitions |
-| `Wilsonatb\InAppUpdate\Events\InAppUpdateFlowCompleted` | Terminal results (`installed`, `downloaded`, `canceled`, `failed`) |
+| Event | Purpose | Main payload fields |
+|---|---|---|
+| `Wilsonatb\InAppUpdate\Events\InAppUpdateStateChanged` | Non-terminal lifecycle/progress updates | `status`, `updateType`, `id`, `installStatus`, `installStatusCode`, `isUpdateAvailable`, `isFlexibleAllowed`, `isImmediateAllowed`, `preferredType`, `preferredTypeAllowed`, `passesStalenessConstraint`, `passesPriorityConstraint`, `updateAvailability`, `availableVersionCode`, `clientVersionStalenessDays`, `updatePriority`, `bytesDownloaded`, `totalBytesToDownload`, `error`, `errorCode` |
+| `Wilsonatb\InAppUpdate\Events\InAppUpdateFlowCompleted` | Terminal flow outcome | `result`, `updateType`, `id`, `error`, `errorCode` |
 
-### Common `InAppUpdateStateChanged.status` values
+### `InAppUpdateStateChanged.status` values
 
 - `availability_checked`
 - `flow_started`
@@ -159,6 +153,24 @@ off(Events.InAppUpdateFlowCompleted, onFlowCompleted);
 - `downloaded_pending_completion`
 - `developer_triggered_update_in_progress`
 - `resuming_immediate_update`
+- `completing_flexible_update`
+- `resume_check_failed`
+
+### `InAppUpdateFlowCompleted.result` values
+
+- `installed`
+- `downloaded`
+- `canceled`
+- `failed`
+
+## Recommended flow (production + self-test)
+
+1. Generate one UUID `id` per update attempt.
+2. Register listeners for `InAppUpdateStateChanged` and `InAppUpdateFlowCompleted`.
+3. Call `checkForUpdate(...)`.
+4. If available and allowed, start `startImmediateUpdate(...)` (required) or `startFlexibleUpdate(...)` (optional).
+5. For flexible, when `installStatus === 'downloaded'`, call `completeFlexibleUpdate(...)`.
+6. On resume/re-entry, call `getInstallStatus()` and continue the same `id`.
 
 ## Requirements
 
