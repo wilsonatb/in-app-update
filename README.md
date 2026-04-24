@@ -1,42 +1,62 @@
 # InAppUpdate Plugin for NativePHP Mobile
 
-Android-only NativePHP plugin for Google Play In-App Updates, with both **Flexible** and **Immediate** flows.
+Android-only NativePHP plugin for Google Play In-App Updates. Easily integrate native app updates into your PHP/Livewire or JavaScript frontend with support for both **Flexible** and **Immediate** flows.
 
 [![PHP Version](https://img.shields.io/packagist/php-v/wilsonatb/in-app-update.svg?color=blue)](https://packagist.org/packages/wilsonatb/in-app-update)
 [![Downloads](https://img.shields.io/packagist/dt/wilsonatb/in-app-update.svg?color=red)](https://packagist.org/packages/wilsonatb/in-app-update)
 ![License](https://img.shields.io/github/license/wilsonatb/in-app-update.svg?color=green)
 
-## Screenshot
-
 <p align="center">
     <img height="500" alt="InAppUpdate Plugin Screenshot" src="https://github.com/user-attachments/assets/5923e8a9-8a16-464b-80ad-8dd1d9b90fb6" />
 </p>
 
-## Platform Support
+## Understanding Update Flows
 
-| Platform | Support |
-|---|---|
-| Android | ✅ Supported (Google Play Core) |
-| iOS | ❌ Not supported |
+Google Play offers two ways to handle in-app updates. This plugin supports both:
+* **Flexible:** The user can continue using the app while the update downloads in the background. Once downloaded, you prompt the user to install it.
+* **Immediate:** A fullscreen blocking UI. The user must update and restart the app to continue using it.
 
-### Runtime behavior on iOS
-
-If any `InAppUpdate` method is called on iOS, the plugin returns a controlled response and skips native execution:
-
-- `supported: false`
-- `status: "unsupported_platform"`
-- `platform: "ios"`
-- `message: "InAppUpdate is Android-only... was skipped on iOS."`
+---
 
 ## Installation
 
 ```bash
+# 1. Install the package
 composer require wilsonatb/in-app-update
+
+# 2. Publish the plugins provider (first time only)
 php artisan vendor:publish --tag=nativephp-plugins-provider
+
+# 3. Register the plugin
 php artisan native:plugin:register wilsonatb/in-app-update
 ```
 
-## Quick Start (PHP / Livewire)
+### Platform Support
+
+| Platform | Support | Notes |
+|---|---|---|
+| **Android** | ✅ Supported | Uses Google Play Core |
+| **iOS** | ❌ Not supported | Returns a controlled skipped response (`supported: false`) to prevent crashes. |
+
+---
+
+## How It Works (The Recommended Flow)
+
+Whether you use PHP or JavaScript, the mental model for a successful update attempt is the same:
+
+1. **Generate an ID:** Create one UUID (`id`) per update attempt.
+2. **Listen to Events:** Register listeners for `InAppUpdateStateChanged` and `InAppUpdateFlowCompleted`.
+3. **Check Availability:** Call `checkForUpdate(...)`.
+4. **Start the Update:** If available, call `startImmediateUpdate(...)` or `startFlexibleUpdate(...)`.
+5. **Complete (Flexible only):** When the `installStatus` changes to `downloaded`, call `completeFlexibleUpdate(...)` to apply it.
+
+---
+
+## Usage Examples
+
+### PHP / Livewire
+
+In this example, we use NativePHP's `#[OnNative]` attributes to handle the async events triggered by the update flow.
 
 ```php
 use Native\Mobile\Attributes\OnNative;
@@ -55,7 +75,7 @@ public function checkUpdate(): void
         id: $this->updateFlowId,
     );
 
-    // iOS-safe response: plugin skips execution and returns supported=false.
+    // iOS-safe response: plugin gracefully skips execution
     if (($result->supported ?? true) === false) {
         return;
     }
@@ -69,6 +89,7 @@ public function onInAppUpdateStateChanged(
     ?string $installStatus = null,
     ?bool $isUpdateAvailable = null,
 ): void {
+    // Ensure we are responding to the current flow
     if ($id !== $this->updateFlowId) {
         return;
     }
@@ -88,11 +109,11 @@ public function onInAppUpdateFlowCompleted(
     string $updateType,
     ?string $id = null,
 ): void {
-    // installed | downloaded | canceled | failed
+    // Handle final results: installed | downloaded | canceled | failed
 }
 ```
 
-## JavaScript Usage (Vue / React / Inertia)
+### JavaScript (Vue / React / Inertia)
 
 ```javascript
 import { InAppUpdate, Events } from '@wilsonatb/in-app-update';
@@ -100,108 +121,85 @@ import { on, off } from '@nativephp/native';
 
 const id = crypto.randomUUID();
 
-const onState = (payload) => console.log('state', payload);
-const onFlowCompleted = (payload) => console.log('completed', payload);
+const onState = (payload) => console.log('State changed:', payload);
+const onFlowCompleted = (payload) => console.log('Flow completed:', payload);
 
+// Register listeners
 on(Events.InAppUpdateStateChanged, onState);
 on(Events.InAppUpdateFlowCompleted, onFlowCompleted);
 
+// Check for update
 const check = await InAppUpdate.checkForUpdate({ preferredType: 'any', id });
 
-// iOS-safe response: no error, just skip.
 if (!check?.supported) {
-    console.log('InAppUpdate not supported on this platform', check);
+    console.log('Skipped: InAppUpdate not supported on iOS', check);
 } else if (check?.isUpdateAvailable) {
     await InAppUpdate.startFlexibleUpdate({ id });
 }
 
+// Complete if already downloaded
 const latestStatus = await InAppUpdate.getInstallStatus();
 if (latestStatus?.installStatus === 'downloaded') {
     await InAppUpdate.completeFlexibleUpdate({ id });
 }
 
+// Remember to clean up listeners when the component unmounts
 off(Events.InAppUpdateStateChanged, onState);
 off(Events.InAppUpdateFlowCompleted, onFlowCompleted);
 ```
 
-## Bridge Methods (PHP + JavaScript)
+---
 
-All methods use the same bridge functions internally:
+## API Reference
 
-| Method | Bridge function | What it does | Immediate return | Async events |
-|---|---|---|---|---|
-| `checkForUpdate(...)` | `InAppUpdate.CheckForUpdate` | Checks availability and allowed update types (`flexible`, `immediate`, `any`) with optional staleness/priority filters | `{ status: "checking", preferredType, id }` | `InAppUpdateStateChanged` (`status: "availability_checked"`), or `InAppUpdateFlowCompleted` with `result: "failed"` |
-| `startFlexibleUpdate(...)` | `InAppUpdate.StartFlexibleUpdate` | Starts Play Core flexible flow | `{ status: "starting", updateType: "flexible", allowAssetPackDeletion, id }` | `InAppUpdateStateChanged` (`flow_started`, `install_state_changed`, `downloaded_pending_completion`), `InAppUpdateFlowCompleted` (`downloaded`, `installed`, `canceled`, `failed`) |
-| `startImmediateUpdate(...)` | `InAppUpdate.StartImmediateUpdate` | Starts Play Core immediate flow | `{ status: "starting", updateType: "immediate", allowAssetPackDeletion, id }` | `InAppUpdateStateChanged` (`flow_started`, `install_state_changed`, `developer_triggered_update_in_progress`, `resuming_immediate_update`), `InAppUpdateFlowCompleted` (`installed`, `canceled`, `failed`) |
-| `completeFlexibleUpdate(...)` | `InAppUpdate.CompleteFlexibleUpdate` | Installs already downloaded flexible update | `{ status: "completing", updateType: "flexible", id }` | `InAppUpdateStateChanged` (`completing_flexible_update`), or `InAppUpdateFlowCompleted` with `result: "failed"` |
-| `getInstallStatus()` | `InAppUpdate.GetInstallStatus` | Returns last known native status snapshot | Last cached status object (initially `{ status: "idle" }`) | None |
+> **Note:** Always pass the same `id` across all method calls and event checks for a single update attempt.
 
-> Reuse the same `id` across all calls/events in the same update attempt.
+### Methods
 
-## Events
+| Method | Parameters | What it does | Returns (Immediate) |
+|---|---|---|---|
+| `checkForUpdate(...)` | `preferredType` (flexible\|immediate\|any, default: `flexible`), `minStalenessDays?` (int), `minPriority?` (int), `id?` (string) | Checks availability and allowed update types. | `{ status: "checking", ... }` |
+| `startFlexibleUpdate(...)`| `allowAssetPackDeletion` (bool, default: `false`), `id?` (string) | Starts Play Core flexible flow in the background. | `{ status: "starting", updateType: "flexible", ... }` |
+| `startImmediateUpdate(...)`| `allowAssetPackDeletion` (bool, default: `false`), `id?` (string) | Starts Play Core immediate blocking flow. | `{ status: "starting", updateType: "immediate", ... }` |
+| `completeFlexibleUpdate(...)`| `id?` (string) | Installs a flexible update that has finished downloading. | `{ status: "completing", ... }` |
+| `getInstallStatus()` | *None* | Returns last known native status snapshot. | Last cached status object |
 
-| Event | Purpose | Main payload fields |
-|---|---|---|
-| `Wilsonatb\InAppUpdate\Events\InAppUpdateStateChanged` | Non-terminal lifecycle/progress updates | `status`, `updateType`, `id`, `installStatus`, `installStatusCode`, `isUpdateAvailable`, `isFlexibleAllowed`, `isImmediateAllowed`, `preferredType`, `preferredTypeAllowed`, `passesStalenessConstraint`, `passesPriorityConstraint`, `updateAvailability`, `availableVersionCode`, `clientVersionStalenessDays`, `updatePriority`, `bytesDownloaded`, `totalBytesToDownload`, `error`, `errorCode` |
-| `Wilsonatb\InAppUpdate\Events\InAppUpdateFlowCompleted` | Terminal flow outcome | `result`, `updateType`, `id`, `error`, `errorCode` |
+### Events
 
-### `InAppUpdateStateChanged.status` values
+* **`InAppUpdateStateChanged`**: Fired for non-terminal lifecycle/progress updates.
+    * *Key Payload Fields:* `status`, `updateType`, `id`, `installStatus`, `isUpdateAvailable`, `bytesDownloaded`, `totalBytesToDownload`.
+    * *Status Values:* `availability_checked`, `flow_started`, `install_state_changed`, `downloaded_pending_completion`, `developer_triggered_update_in_progress`, `resuming_immediate_update`, `completing_flexible_update`, `resume_check_failed`.
+* **`InAppUpdateFlowCompleted`**: Fired when the flow reaches a terminal outcome.
+    * *Key Payload Fields:* `result`, `updateType`, `id`, `error`.
+    * *Result Values:* `installed`, `downloaded`, `canceled`, `failed`.
 
-- `availability_checked`
-- `flow_started`
-- `install_state_changed`
-- `downloaded_pending_completion`
-- `developer_triggered_update_in_progress`
-- `resuming_immediate_update`
-- `completing_flexible_update`
-- `resume_check_failed`
-
-### `InAppUpdateFlowCompleted.result` values
-
-- `installed`
-- `downloaded`
-- `canceled`
-- `failed`
-
-## Recommended flow (production + self-test)
-
-1. Generate one UUID `id` per update attempt.
-2. Register listeners for `InAppUpdateStateChanged` and `InAppUpdateFlowCompleted`.
-3. Call `checkForUpdate(...)`.
-4. If available and allowed, start `startImmediateUpdate(...)` (required) or `startFlexibleUpdate(...)` (optional).
-5. For flexible, when `installStatus === 'downloaded'`, call `completeFlexibleUpdate(...)`.
-6. On resume/re-entry, call `getInstallStatus()` and continue the same `id`.
-
-## Requirements
-
-### Permissions
-
-No additional Android permissions are required.
-
-### Android Dependencies (included by plugin)
-
-- `com.google.android.play:app-update:2.1.0`
-- `com.google.android.play:app-update-ktx:2.1.0`
+---
 
 ## Testing with Internal App Sharing
 
-1. Install a build that already includes this plugin.
-2. Upload a newer build (higher `versionCode`) to Internal App Sharing.
-3. Open the sharing URL on the same device, but do **not** install from the Play page.
-4. Open your installed app and run the update flow.
+Testing Android In-App Updates requires specific conditions. Using Google Play's Internal App Sharing is the recommended approach:
 
-### Troubleshooting
+1. Install a base build of your app that already includes this plugin on your device.
+2. Build a new version with a **higher `versionCode`**.
+3. Upload this newer build to Internal App Sharing in the Play Console.
+4. Open the generated sharing URL on your test device, but **do not click install** on the Play Store page.
+5. Open your currently installed app and trigger your update logic.
 
-- Test account must have installed the app from Google Play at least once.
-- Installed build and uploaded build must share the same `applicationId` and signing key.
-- Play will only offer updates for higher `versionCode`.
-- `inAppUpdatePriority` is not available in Internal App Sharing.
+### ⚠️ Common Troubleshooting
+* The Google account on the test device **must** have installed the app from Google Play at least once previously.
+* Both the installed build and the uploaded build must share the **exact same `applicationId` and signing key**.
+* `inAppUpdatePriority` constraints do not work during Internal App Sharing tests.
 
-## Support
+---
+
+## Requirements & Support
+
+* **Permissions:** No additional Android permissions are required.
+* **Dependencies:** Plugin automatically includes `com.google.android.play:app-update:2.1.0` and `com.google.android.play:app-update-ktx:2.1.0`.
 
 For issues, questions, or feature requests:
-- **Email:** diwdesign.wilson@gmail.com
-- **GitHub Issues:** [Issues](https://github.com/wilsonatb/in-app-update/issues)
+* **GitHub Issues:** [Open an issue](https://github.com/wilsonatb/in-app-update/issues)
+* **Email:** diwdesign.wilson@gmail.com
 
 ## License
 
