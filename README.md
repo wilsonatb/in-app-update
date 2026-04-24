@@ -56,7 +56,7 @@ Whether you use PHP or JavaScript, the mental model for a successful update atte
 
 ### PHP / Livewire
 
-In this example, we use NativePHP's `#[OnNative]` attributes to handle the async events triggered by the update flow.
+This example demonstrates how to handle the async events triggered by the update flow using NativePHP's #[OnNative] attributes.
 
 ```php
 use Native\Mobile\Attributes\OnNative;
